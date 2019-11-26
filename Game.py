@@ -48,11 +48,12 @@ def setup_client_connection(client: GameClient):
 
 async  def communication_with_server(client: GameClient, event_loop):
     UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-    keystate = json.dumps(client.actions.keys)
-    UDPClientSocket.sendto(str.encode(keystate), (client.server_address, Server.SERVER_PORT))
-    data_packet = UDPClientSocket.recvfrom(1024)
-    data = data_packet[0]
-    client.from_server = data
+    while True:
+        keystate = json.dumps(client.actions.keys)
+        UDPClientSocket.sendto(str.encode(keystate), (client.server_address, Server.SERVER_PORT))
+        data_packet = UDPClientSocket.recvfrom(1024)
+        data = data_packet[0]
+        client.from_server = data
 
 def main():
     server_address = input("what is the IP address of the server:")

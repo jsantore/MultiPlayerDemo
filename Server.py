@@ -1,9 +1,12 @@
 import socket
 import PlayerState
+import json
+import arcade
+from typing import Dict
 
 SERVER_PORT = 25001
 
-all_players = {} #key is IP address, value is PlayerState.PlayerState
+all_players:Dict[str, PlayerState.PlayerState] = {}  #key is IP address, value is PlayerState.PlayerState
 
 def find_server_address():
     """returns the LAN IP address of the current machine as a string
@@ -32,10 +35,36 @@ def run_server():
         client_addr = data_packet[1] #client IP is second
         if not client_addr in all_players: #first time this client connected
             offset = len(all_players)+1
-            new_player = PlayerState.PlayerState(200*offset, 200*offset)
+            new_player:PlayerState.PlayerState = PlayerState.PlayerState(200*offset, 200*offset)
             all_players[client_addr] = new_player
         print(f"Debug got {message} from {client_addr}")
-        UDPServerSocket.sendto(str.encode("Got it - more to come"), client_addr)
+        json_data = json.loads(message)
+        print(json_data)
+        player_move: PlayerState.PlayerMovement = PlayerState.PlayerMovement()
+        player_move.keys = json_data
+        delta_x = 0
+        delta_y = 0
+        if player_move.keys[str(arcade.key.UP)]:
+            delta_y = 3
+        elif player_move.keys[str(arcade.key.DOWN)]:
+            delta_y = -3
+        if player_move.keys[str(arcade.key.LEFT)]:
+            delta_x = -3
+        elif player_move.keys[str(arcade.key.RIGHT)]:
+            delta_x = 3
+        all_players[client_addr].x_loc+=delta_x
+        if all_players[client_addr].x_loc <0:
+            all_players[client_addr].x_loc = 20
+        elif all_players[client_addr].x_loc > PlayerState.WINDOW_WIDTH:
+            all_players[client_addr].x_loc = PlayerState.WINDOW_WIDTH - 20
+        if all_players[client_addr].y_loc <0:
+            all_players[client_addr].y_loc = 20
+        elif all_players[client_addr].y_loc > PlayerState.WINDOW_HEIGHT:
+            all_players[client_addr].y_loc = PlayerState.WINDOW_HEIGHT - 20
+        all_players[client_addr].y_loc+=delta_y
+        print (all_players[client_addr])
+        response = json.dumps(all_players[client_addr].to_json())
+        UDPServerSocket.sendto(str.encode(response), client_addr)
 
 
 if __name__ == '__main__':
