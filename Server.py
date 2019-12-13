@@ -3,6 +3,7 @@ import PlayerState
 import json
 import arcade
 from typing import Dict
+import datetime
 
 SERVER_PORT = 25001
 
@@ -24,6 +25,37 @@ def find_server_address():
         connection.close()
     return server_address
 
+
+def process_player_move(player_move: PlayerState.PlayerMovement, client_addr: str):
+    #don't process events too fast, only once every 20 miliseconds
+    player_info = all_players[client_addr]
+    now = datetime.datetime.now()
+    if player_info.last_update +datetime.timedelta(milliseconds=20)  > now:
+        return
+    player_info.last_update = now
+    delta_x = 0
+    delta_y = 0
+    if player_move.keys[str(arcade.key.UP)]:
+        delta_y = 3
+    elif player_move.keys[str(arcade.key.DOWN)]:
+        delta_y = -3
+    if player_move.keys[str(arcade.key.LEFT)]:
+        delta_x = -3
+    elif player_move.keys[str(arcade.key.RIGHT)]:
+        delta_x = 3
+    all_players[client_addr].x_loc += delta_x
+    if all_players[client_addr].x_loc < 0:
+        all_players[client_addr].x_loc = 20
+    elif all_players[client_addr].x_loc > PlayerState.WINDOW_WIDTH:
+        all_players[client_addr].x_loc = PlayerState.WINDOW_WIDTH - 20
+    if all_players[client_addr].y_loc < 0:
+        all_players[client_addr].y_loc = 20
+    elif all_players[client_addr].y_loc > PlayerState.WINDOW_HEIGHT:
+        all_players[client_addr].y_loc = PlayerState.WINDOW_HEIGHT - 20
+    all_players[client_addr].y_loc += delta_y
+ #   print(all_players[client_addr])
+
+
 def run_server():
     server_address = find_server_address()
     print(f" Server Address is: {server_address}, on prt {SERVER_PORT}")
@@ -31,39 +63,22 @@ def run_server():
     UDPServerSocket.bind((server_address, SERVER_PORT))
     while(True):
         data_packet = UDPServerSocket.recvfrom(1024)
-        message = data_packet[0] #data is first in tuple
-        client_addr = data_packet[1] #client IP is second
-        if not client_addr in all_players: #first time this client connected
+        message = data_packet[0]  # data is first in tuple
+        client_addr = data_packet[1]  # client IP is second
+        if not client_addr in all_players:  # first time this client connected
             offset = len(all_players)+1
-            new_player:PlayerState.PlayerState = PlayerState.PlayerState(200*offset, 200*offset)
+            #create new player with x and y positions, 0 points and a last update of now
+            new_player:PlayerState.PlayerState = PlayerState.PlayerState(200*offset, 200*offset, 0, datetime.datetime.now())
             all_players[client_addr] = new_player
-        print(f"Debug got {message} from {client_addr}")
+#        print(f"Debug got {message} from {client_addr}")
         json_data = json.loads(message)
-        print(json_data)
+#       print(json_data)
         player_move: PlayerState.PlayerMovement = PlayerState.PlayerMovement()
         player_move.keys = json_data
-        delta_x = 0
-        delta_y = 0
-        if player_move.keys[str(arcade.key.UP)]:
-            delta_y = 3
-        elif player_move.keys[str(arcade.key.DOWN)]:
-            delta_y = -3
-        if player_move.keys[str(arcade.key.LEFT)]:
-            delta_x = -3
-        elif player_move.keys[str(arcade.key.RIGHT)]:
-            delta_x = 3
-        all_players[client_addr].x_loc+=delta_x
-        if all_players[client_addr].x_loc <0:
-            all_players[client_addr].x_loc = 20
-        elif all_players[client_addr].x_loc > PlayerState.WINDOW_WIDTH:
-            all_players[client_addr].x_loc = PlayerState.WINDOW_WIDTH - 20
-        if all_players[client_addr].y_loc <0:
-            all_players[client_addr].y_loc = 20
-        elif all_players[client_addr].y_loc > PlayerState.WINDOW_HEIGHT:
-            all_players[client_addr].y_loc = PlayerState.WINDOW_HEIGHT - 20
-        all_players[client_addr].y_loc+=delta_y
-        print (all_players[client_addr])
-        response = json.dumps(all_players[client_addr].to_json())
+        process_player_move(player_move, client_addr)
+        print(F"Debug: the player was: {all_players[client_addr]}")
+        response = all_players[client_addr].to_json()
+        print(f"DEbug server about to send response: {response}")
         UDPServerSocket.sendto(str.encode(response), client_addr)
 
 
