@@ -4,12 +4,13 @@ import json
 import arcade
 from typing import Dict
 import datetime
+import random
 
 SERVER_PORT = 25001
 
 all_players:Dict[str, PlayerState.PlayerState] = {}  #key is IP address, value is PlayerState.PlayerState
 
-def find_server_address():
+def find_ip_address():
     """returns the LAN IP address of the current machine as a string
     A minor revision of this answer:
     https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib#28950776"""
@@ -26,12 +27,13 @@ def find_server_address():
     return server_address
 
 
-def process_player_move(player_move: PlayerState.PlayerMovement, client_addr: str):
+def process_player_move(player_move: PlayerState.PlayerMovement, client_addr: str, gamestate:PlayerState.GameState):
     #don't process events too fast, only once every 20 miliseconds
-    player_info = all_players[client_addr]
+    player_info = gamestate.player_states[client_addr[0]]
     now = datetime.datetime.now()
-    if player_info.last_update +datetime.timedelta(milliseconds=20)  > now:
+    if player_info.last_update +datetime.timedelta(milliseconds=20) > now:
         return
+    #if it has been long enough, process movement
     player_info.last_update = now
     delta_x = 0
     delta_y = 0
@@ -43,21 +45,46 @@ def process_player_move(player_move: PlayerState.PlayerMovement, client_addr: st
         delta_x = -3
     elif player_move.keys[str(arcade.key.RIGHT)]:
         delta_x = 3
-    all_players[client_addr].x_loc += delta_x
-    if all_players[client_addr].x_loc < 0:
-        all_players[client_addr].x_loc = 20
-    elif all_players[client_addr].x_loc > PlayerState.WINDOW_WIDTH:
-        all_players[client_addr].x_loc = PlayerState.WINDOW_WIDTH - 20
-    if all_players[client_addr].y_loc < 0:
-        all_players[client_addr].y_loc = 20
-    elif all_players[client_addr].y_loc > PlayerState.WINDOW_HEIGHT:
-        all_players[client_addr].y_loc = PlayerState.WINDOW_HEIGHT - 20
-    all_players[client_addr].y_loc += delta_y
- #   print(all_players[client_addr])
+    if player_info.x_loc < 0:
+        player_info.x_loc = 20
+    elif player_info.x_loc > PlayerState.WINDOW_WIDTH:
+        player_info.x_loc = PlayerState.WINDOW_WIDTH - 20
+    if player_info.y_loc < 0:
+        player_info.y_loc = 20
+    elif player_info.y_loc > PlayerState.WINDOW_HEIGHT:
+        player_info.y_loc = PlayerState.WINDOW_HEIGHT - 20
+    player_info.x_loc += delta_x
+    player_info.y_loc += delta_y
+    check_if_at_target(player_info, gamestate.target, gamestate)
+
+
+def check_if_at_target(player:PlayerState.PlayerState, target: PlayerState.TargetState, gamestate: PlayerState.GameState):
+    ##cheating a bit here since I'm running out of time. I know player and target are both 72x72 pixals so
+    ##I use that shamelessly in this hack.
+    playerTopLeft = (player.x_loc-36, player.y_loc+36)#tuple of the top left corner of the player
+    playerBottomRight = (player.x_loc+36, player.y_loc-36)
+    TargetTopLeft = (target.xLoc-36,target.yloc+36)
+    target_bottom_right = (target.xLoc+36, target.yloc-36)
+    #Now lets use the good old geeks for geeks method https://www.geeksforgeeks.org/find-two-rectangles-overlap/
+    #of course I still have to translate from their (terrible) var names to mine
+    # If one rectangle is on left side of other
+    if playerTopLeft[0] > target_bottom_right[0] or TargetTopLeft[0] > playerBottomRight[0]:
+        return
+    # If one rectangle is above other
+    if playerTopLeft[1] < target_bottom_right[1] or TargetTopLeft[1] < playerBottomRight[1]:
+        return
+
+    ##otherwise there must have been a collision
+    print("CHECk SUCEEDED!!!!!!!!!!!!!!!!!!!!!!")
+    player.points += 5
+    gamestate.target = PlayerState.TargetState(random.randint(36, PlayerState.WINDOW_WIDTH-36),random.randint(36, PlayerState.WINDOW_HEIGHT-36))
+
 
 
 def run_server():
-    server_address = find_server_address()
+    initial_target = PlayerState.TargetState(random.randint(36, PlayerState.WINDOW_WIDTH-36),random.randint(36, PlayerState.WINDOW_HEIGHT-36))
+    gameState = PlayerState.GameState(all_players, initial_target)
+    server_address = find_ip_address()
     print(f" Server Address is: {server_address}, on prt {SERVER_PORT}")
     UDPServerSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
     UDPServerSocket.bind((server_address, SERVER_PORT))
@@ -65,20 +92,17 @@ def run_server():
         data_packet = UDPServerSocket.recvfrom(1024)
         message = data_packet[0]  # data is first in tuple
         client_addr = data_packet[1]  # client IP is second
-        if not client_addr in all_players:  # first time this client connected
+        if not client_addr[0] in all_players:  # first time this client connected client_addr is (IP_addr, port) we only care about IP per player
+            print("saw it for the first time")
             offset = len(all_players)+1
             #create new player with x and y positions, 0 points and a last update of now
             new_player:PlayerState.PlayerState = PlayerState.PlayerState(200*offset, 200*offset, 0, datetime.datetime.now())
-            all_players[client_addr] = new_player
-#        print(f"Debug got {message} from {client_addr}")
+            all_players[client_addr[0]] = new_player
         json_data = json.loads(message)
-#       print(json_data)
         player_move: PlayerState.PlayerMovement = PlayerState.PlayerMovement()
         player_move.keys = json_data
-        process_player_move(player_move, client_addr)
-        print(F"Debug: the player was: {all_players[client_addr]}")
-        response = all_players[client_addr].to_json()
-        print(f"DEbug server about to send response: {response}")
+        process_player_move(player_move, client_addr, gameState)
+        response = gameState.to_json()
         UDPServerSocket.sendto(str.encode(response), client_addr)
 
 
